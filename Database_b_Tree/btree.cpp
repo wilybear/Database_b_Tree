@@ -8,6 +8,8 @@ using namespace std;
 
 const int ZERO = 0;
 
+/*created by 12161553 ±èÇö½Ä*/
+
 vector<string> split(const char* str, char c = ' ')
 {
 	vector<string> result;
