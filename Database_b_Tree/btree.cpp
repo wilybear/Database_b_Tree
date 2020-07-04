@@ -4,6 +4,8 @@
 #include <vector>
 #include<stack>
 #include <algorithm>
+#include <queue>
+#include<sstream>
 using namespace std;
 
 const int ZERO = 0;
@@ -265,11 +267,83 @@ public:
 		//currentlevel == level => leaf node 일떄
 		return history;
 	}
-	void print();
+	
+	
+	//print 함수 bfs 이용
+	void print() {
+		const char* resultFimeName = "result.txt";
+		readHeader();
+		stringstream buffer;
+		int curlevel = 0;
+		buffer << "<" << curlevel << ">" << endl;
+		pair<vector<int>,int> nextID = printNonLeafBlock(rootId,curlevel, buffer);
+		queue<pair<vector<int>, int>> idQ;
+		idQ.push(nextID);
+		bool first = true;
+		while (!idQ.empty())
+		{
+			vector<int> qID = idQ.front().first;
+			int qlevel = idQ.front().second;
+			idQ.pop();
+			if (curlevel != qlevel) {
+				if (qlevel == level) {
+					//leafnode
+					if (first) {
+						buffer << endl;
+						buffer << "<" << qlevel << ">" << endl;
+						first = false;
+					}
+					for (auto id : qID) {
+						pintLeafBlock(id, buffer);
+					}
+					continue;
+				}
+				else {
+					curlevel++;
+					buffer << endl;
+					buffer << "<" << curlevel << ">" << endl;
+				}
+			}
+			for (auto id : qID) {
+				idQ.push(printNonLeafBlock(id, curlevel, buffer));
+			}
+		}
+
+		fout.open(resultFimeName, fstream::out);
+		fout << buffer.str();
+		fout.close();
+	}
+
+	void pintLeafBlock(int BID,stringstream& buffer) {
+		vector<int> block_v = readBlockWithoutZero(BID);
+		for (int i = 0; i < block_v.size()-1; i+=2) {
+			buffer << block_v[i] << ",";
+		}
+	}
+
+	pair<vector<int>,int> printNonLeafBlock(int BID,int curlevel, stringstream& buffer) {
+		vector<int> block_v = readBlockWithoutZero(BID);
+		vector<int> next_blockid;
+		for (int i = 0; i < block_v .size(); i++) {
+			if (i % 2 == 0) {
+				next_blockid.push_back(block_v[i]);
+			}
+			else {
+				buffer <<block_v[i] <<",";
+			}
+		}
+		return make_pair(next_blockid,curlevel+1);
+	}
+
 	int search(int key) { // point search
 		readBlock(rootId);
 
 		return 1;
+	}
+
+	void pointSearch(int key) {
+		stack<int> history = find_node(key);
+
 	}
 
 	int* search(int startRange, int endRange); // range search
@@ -285,7 +359,23 @@ public:
 		}
 		return node;
 	}
+	vector<int> readBlockWithoutZero(int id) {
+		fstream fin;
+		fin.open(fileName, ios::binary | ios::in);
+		fin.seekg(getOffset(id), ios::beg);
 
+		vector<int> node;
+		for (int i = 0; i < block_size / 4; i++) {
+			int temp;
+			fin.read(reinterpret_cast<char*>(&temp), 4);
+
+			if (temp == 0) {
+				break;
+			}
+			node.push_back(temp);
+		}
+		return node;
+	}
 	//새로운 블럭을 파일 끝에 생성하고 할당, blockID return
 	int createBlock() {
 		int length;
@@ -296,6 +386,7 @@ public:
 		for (int i = block_size; i > 0; i = i-4) {
 			fout.write(reinterpret_cast<const char*>(&ZERO), 4);
 		}
+		cout<<"파일크기:"<<fout.tellp()<<endl;
 		fout.close();
 		newBlockId = (length - 12) / block_size+1;
 		return newBlockId;
@@ -314,6 +405,7 @@ public:
 	int getOffset(int id) {
 		return HEADER + (id - 1) * block_size;
 	}
+
 };
 
 
@@ -345,12 +437,12 @@ int main()
 {
 	//char command = argv[1][0];
 	
-	Btree myBtree = Btree("btree.bin", 36);
+	Btree myBtree = Btree("btree.bin", 28);
 	vector<pair<int,int>> datas = read_initial_data();
 	for (auto p: datas) {
 		myBtree.insert(p.first, p.second);
 	}
-
+	myBtree.print();
 
 	/*
 	switch (command)
