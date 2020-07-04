@@ -45,9 +45,13 @@ public:
 	const int HEADER = 12;
 	const char* fileName;
 	fstream fout;
+	Btree(const char* fileName) {
+		this->fileName = fileName;
+		readHeader();
+		EntryCnt = (block_size - 4) / 8;
+	}
 	Btree(const char* fileName, int blockSize) {
 		EntryCnt = (blockSize - 4) / 8;
-		cout << "EntryCnt = " << EntryCnt << endl;
 		this->fileName = fileName;
 		level = 0;
 		rootId = 0;
@@ -269,9 +273,10 @@ public:
 	}
 	
 	
-	//print 함수 bfs 이용
-	void print() {
-		const char* resultFimeName = "result.txt";
+	/*
+	print 함수 (bfs 이용)
+	*/
+	void print(const char* resultFile) {
 		readHeader();
 		stringstream buffer;
 		int curlevel = 0;
@@ -289,6 +294,7 @@ public:
 				if (qlevel == level) {
 					//leafnode
 					if (first) {
+						buffer.seekp(-1, ios::cur);
 						buffer << endl;
 						buffer << "<" << qlevel << ">" << endl;
 						first = false;
@@ -300,6 +306,7 @@ public:
 				}
 				else {
 					curlevel++;
+					buffer.seekp(-1, ios::cur);
 					buffer << endl;
 					buffer << "<" << curlevel << ">" << endl;
 				}
@@ -308,19 +315,20 @@ public:
 				idQ.push(printNonLeafBlock(id, curlevel, buffer));
 			}
 		}
-
-		fout.open(resultFimeName, fstream::out);
+		buffer.seekp(-1, ios::cur);
+		buffer << endl;
+		fout.open(resultFile, fstream::out);
 		fout << buffer.str();
 		fout.close();
 	}
-
+	//Leaf Node의 키값 출력
 	void pintLeafBlock(int BID,stringstream& buffer) {
 		vector<int> block_v = readBlockWithoutZero(BID);
 		for (int i = 0; i < block_v.size()-1; i+=2) {
 			buffer << block_v[i] << ",";
 		}
 	}
-
+	//해당 nonLeafNode의 키값 출력, level 과 pointer들 return
 	pair<vector<int>,int> printNonLeafBlock(int BID,int curlevel, stringstream& buffer) {
 		vector<int> block_v = readBlockWithoutZero(BID);
 		vector<int> next_blockid;
@@ -335,18 +343,74 @@ public:
 		return make_pair(next_blockid,curlevel+1);
 	}
 
-	int search(int key) { // point search
-		readBlock(rootId);
+	void pointSearch(vector<int> datas,const char* resultFile) {
+		stringstream s;
+		for (auto k : datas) {
+			search(k,s);
+		}
+	
+		fout.open(resultFile, fstream::out);
+		fout << s.str();
+		fout.close();
+	}
 
+	int search(int key,stringstream& ss) { // point search
+		stack<int> history = find_node(key);
+		int leafNode = history.top();
+		vector<int> block_v= readBlock(leafNode);
+		vector<pair<int, int>> key_value;
+		for (int i = 0; i < block_v.size() - 1; i += 2) {
+			if (block_v[i] == 0) {
+				break;
+			}
+			key_value.push_back(make_pair(block_v[i], block_v[i + 1]));
+		
+		}
+		for (auto p : key_value) {
+			if (p.first == key) {
+				ss << p.first << "," << p.second << endl;
+			}
+		}
 		return 1;
 	}
 
-	void pointSearch(int key) {
-		stack<int> history = find_node(key);
+	//range search
+	void rangeSearch(vector<pair<int,int>> datas, const char* resultFile) {
+		stringstream s;
+		for (auto k : datas) {
+			stack<int> history = find_node(k.first);
+			int curBID = history.top();
+			while (curBID!=0) {
+				vector<int> curBlock_v = readBlock(curBID);
+				for (int i = 0; i < curBlock_v.size() - 1; i += 2) {
+					if (curBlock_v[i] == 0) {
+						break;
+					}
+					if (curBlock_v[i] >= k.first&& curBlock_v[i]<= k.second) {
+						s << curBlock_v[i] << "," << curBlock_v[i + 1] << "\t";
+					}
+					if (curBlock_v[i] > k.second) {
+						curBID = 0;
+						break;
+					}
+				}
+				if (curBID != 0) {
+					curBID = curBlock_v[curBlock_v.size() - 1];
+				}
+			}
+			s << endl;
+		}
+
+		fout.open(resultFile, fstream::out);
+		fout << s.str();
+		fout.close();
 
 	}
 
-	int* search(int startRange, int endRange); // range search
+
+	/*
+	Block 관련 함수들
+	*/
 
 	//block을 4byte 단위로 읽어서 vector return
 	vector<int> readBlock(int id) {
@@ -359,6 +423,7 @@ public:
 		}
 		return node;
 	}
+
 	vector<int> readBlockWithoutZero(int id) {
 		fstream fin;
 		fin.open(fileName, ios::binary | ios::in);
@@ -386,7 +451,6 @@ public:
 		for (int i = block_size; i > 0; i = i-4) {
 			fout.write(reinterpret_cast<const char*>(&ZERO), 4);
 		}
-		cout<<"파일크기:"<<fout.tellp()<<endl;
 		fout.close();
 		newBlockId = (length - 12) / block_size+1;
 		return newBlockId;
@@ -410,9 +474,9 @@ public:
 
 
 
-vector<pair<int,int>> read_initial_data() {
+vector<pair<int,int>> read_initial_data(const char* fileName) {
 	ifstream readFile;
-	readFile.open("sample_insertion_input.txt");
+	readFile.open(fileName);
 	vector<pair<int, int>> datas;
 	if (readFile.is_open()) {
 		while (readFile.peek() != EOF) {
@@ -421,48 +485,78 @@ vector<pair<int,int>> read_initial_data() {
 			vector<string> tokens = split(temp.c_str(), ',');
 			int key, value;
 			for (int i = 0; i < tokens.size(); i = i + 2) {
-				datas.push_back(make_pair(stoi(tokens[i]), stoi(tokens[i + 1])));
+				if (tokens[i] != ""&& tokens[i+1] != "") {
+					datas.push_back(make_pair(stoi(tokens[i]), stoi(tokens[i + 1])));
+				}
 			}
-			cout << endl;
+		}
+	}
+	return datas;
+}
+
+vector<int> read_search_data(const char* fileName) {
+	ifstream readFile;
+	readFile.open(fileName);
+	vector< int> datas;
+	if (readFile.is_open()) {
+		while (readFile.peek() != EOF) {
+			string temp;
+			getline(readFile, temp);
+			if (temp != "") {
+				datas.push_back(stoi(temp));
+			}
 		}
 	}
 	return datas;
 }
 
 
-
-
-//int argc, char* argv[]
-int main()
+int main(int argc, char* argv[])
 {
-	//char command = argv[1][0];
-	
-	Btree myBtree = Btree("btree.bin", 28);
-	vector<pair<int,int>> datas = read_initial_data();
-	for (auto p: datas) {
-		myBtree.insert(p.first, p.second);
-	}
-	myBtree.print();
+	char command = argv[1][0];
 
-	/*
+	Btree* btree;
+	vector<int> searchData;
+	vector<pair<int, int>> datas;
+
 	switch (command)
 	{
 	case 'c':
-		Btree myBtree = Btree("btree.bin", 4);
+		btree = new Btree(argv[2],atoi(argv[3]));
 		// create index file
+		//bptree.exe c [bptree binary file] [block_size]
 		break;
 	case 'i':
+		btree = new Btree(argv[2]);
+		datas = read_initial_data(argv[3]);
+		for (auto p : datas) {
+			cout << p.first << p.second << endl;
+			btree->insert(p.first, p.second);
+		}
 		// insert records from [records data file], ex) records.txt
+		//bptree.exe i [bptree binary file] [records data text file]
 		break;
 	case 's':
+
+		btree = new Btree(argv[2]);
+		searchData = read_search_data(argv[3]);
+		btree->pointSearch(searchData, argv[4]);
+		//bptree.exe s[bptree binary file][input text file][output text file]
 		// search keys in [input file] and print results to [output file]
 		break;
 	case 'r':
+		btree = new Btree(argv[2]);
+		datas = read_initial_data(argv[3]);
+		btree->rangeSearch(datas, argv[4]);
+		//bptree.exe r [bptree binary file] [input text file] [output text file]
 		// search keys in [input file] and print results to [output file]
 		break;
 	case 'p':
+		btree = new Btree(argv[2]);
+		btree->print(argv[3]);
+		//bptree.exe p [bptree binary file] [output text file]
 		// print B+-Tree structure to [output file]
 		break;
 	}
-	*/
+
 }
